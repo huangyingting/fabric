@@ -21,6 +21,8 @@ prisma/*.db-wal
 prisma/*.db-shm
 *.db
 *.db-journal
+public/uploads/*
+!public/uploads/.gitkeep
 
 # Testing & Playwright
 /test-results/

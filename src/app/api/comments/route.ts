@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestActor } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -27,8 +26,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -42,7 +41,7 @@ export async function POST(req: Request) {
   const comment = await prisma.comment.create({
     data: {
       resourceId,
-      authorId: session.user.id,
+      authorId: actor.id,
       body: String(text).trim(),
       timestamp: typeof timestamp === 'number' ? timestamp : null,
       page: typeof page === 'number' ? page : null,
@@ -58,9 +57,12 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (actor.role === 'Viewer') {
+    return NextResponse.json({ error: 'Viewers have read-only access.' }, { status: 403 });
   }
 
   const { searchParams } = new URL(req.url);

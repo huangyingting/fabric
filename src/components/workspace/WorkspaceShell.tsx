@@ -59,6 +59,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     setActiveCreateModal,
     createQuickResource,
     openExpandedResource,
+    refreshWorkspace,
   } = useWorkspace();
 
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
@@ -76,11 +77,24 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const [isRecording, setIsRecording] = useState(false);
   const [uploadName, setUploadName] = useState('');
   const [uploadKind, setUploadKind] = useState<'document' | 'image' | 'video' | 'audio'>('document');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   // Search modal state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchKind, setSearchKind] = useState('');
   const [searchResults, setSearchResults] = useState<ResourceItem[]>([]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchModalOpen(true);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [setSearchModalOpen]);
 
   useEffect(() => {
     if (!isRecording) return;
@@ -126,17 +140,38 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   async function handleSaveLink(e: React.FormEvent) {
     e.preventDefault();
     if (!linkUrl.trim()) return;
-    await createQuickResource({
-      kind: 'link',
-      name: linkTitle.trim() || linkUrl.replace(/^https?:\/\//, '').slice(0, 48),
-      url: linkUrl.trim(),
-      description: `Captured web bookmark from ${linkUrl.trim()}`,
-      root: 'INBOX',
-      openAfterCreate: true,
-    });
-    setLinkUrl('');
-    setLinkTitle('');
-    setActiveCreateModal(null);
+    try {
+      const res = await fetch('/api/clip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceSlug,
+          url: linkUrl.trim(),
+          title: linkTitle.trim() || undefined,
+          root: 'INBOX',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await refreshWorkspace();
+        if (data.resource?.id) {
+          openExpandedResource(data.resource.id);
+        }
+      } else {
+        await createQuickResource({
+          kind: 'link',
+          name: linkTitle.trim() || linkUrl.replace(/^https?:\/\//, '').slice(0, 48),
+          url: linkUrl.trim(),
+          description: `Captured web bookmark from ${linkUrl.trim()}`,
+          root: 'INBOX',
+          openAfterCreate: true,
+        });
+      }
+    } finally {
+      setLinkUrl('');
+      setLinkTitle('');
+      setActiveCreateModal(null);
+    }
   }
 
   async function handleSaveSpace(e: React.FormEvent) {
@@ -171,23 +206,50 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
   async function handleSaveUpload(e: React.FormEvent) {
     e.preventDefault();
-    if (!uploadName.trim()) return;
-    await createQuickResource({
-      kind: uploadKind,
-      name: uploadName.trim(),
-      description: `Uploaded ${uploadKind} asset.`,
-      content:
-        uploadKind === 'document'
-          ? `Uploaded Document: ${uploadName.trim()}\n\nIndexed for full-text search and spatial pin annotations.`
-          : undefined,
-      url:
-        uploadKind === 'image'
-          ? 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80'
-          : undefined,
-      openAfterCreate: true,
-    });
-    setUploadName('');
-    setActiveCreateModal(null);
+    if (!uploadFile && !uploadName.trim()) return;
+    setUploading(true);
+    try {
+      if (uploadFile) {
+        const formData = new FormData();
+        formData.append('file', uploadFile);
+        formData.append('workspaceSlug', workspaceSlug);
+        formData.append('kind', uploadKind);
+        if (uploadName.trim()) {
+          formData.append('title', uploadName.trim());
+        }
+        const res = await fetch('/api/uploads', {
+          method: 'POST',
+          body: formData,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          await refreshWorkspace();
+          if (data.resource?.id) {
+            openExpandedResource(data.resource.id);
+          }
+        }
+      } else {
+        await createQuickResource({
+          kind: uploadKind,
+          name: uploadName.trim(),
+          description: `Uploaded ${uploadKind} asset.`,
+          content:
+            uploadKind === 'document'
+              ? `Uploaded Document: ${uploadName.trim()}\n\nIndexed for full-text search and spatial pin annotations.`
+              : undefined,
+          url:
+            uploadKind === 'image'
+              ? 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80'
+              : undefined,
+          openAfterCreate: true,
+        });
+      }
+    } finally {
+      setUploading(false);
+      setUploadName('');
+      setUploadFile(null);
+      setActiveCreateModal(null);
+    }
   }
 
   const sidebarContent = (
@@ -754,11 +816,29 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             </div>
 
             <div>
+              <label className="block text-xs font-medium text-[#6B6B68] mb-1">
+                Select File from Device (optional if naming manually)
+              </label>
+              <input
+                data-testid="upload-file-input"
+                type="file"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] || null;
+                  setUploadFile(f);
+                  if (f && !uploadName.trim()) {
+                    setUploadName(f.name);
+                  }
+                }}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-dashed border-[#E6E6E3] bg-[#F8F8F7]"
+              />
+            </div>
+
+            <div>
               <label className="block text-xs font-medium text-[#6B6B68] mb-1">File Name</label>
               <input
                 data-testid="upload-name-input"
                 type="text"
-                required
+                required={!uploadFile}
                 value={uploadName}
                 onChange={(e) => setUploadName(e.target.value)}
                 placeholder="Q4-System-Design-Spec.pdf"
@@ -793,9 +873,10 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
               <button
                 data-testid="save-upload-submit"
                 type="submit"
+                disabled={uploading}
                 className="px-4 py-2 rounded-xl bg-[#191918] text-white text-xs font-medium"
               >
-                Upload & Index
+                {uploading ? 'Uploading...' : 'Upload & Index'}
               </button>
             </div>
           </form>

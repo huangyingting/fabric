@@ -1,17 +1,16 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestActor } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { AIPersonality, FABRIC_AI_MODELS, runAICompletion } from '@/lib/ai';
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const { searchParams } = new URL(req.url);
-  let workspaceId = searchParams.get('workspaceId');
+  let workspaceId = searchParams.get('workspaceId') || actor.workspaceId || null;
   const workspaceSlug = searchParams.get('workspaceSlug');
   const resourceId = searchParams.get('resourceId');
 
@@ -41,8 +40,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -62,7 +61,7 @@ export async function POST(req: Request) {
   } = body;
 
   const prompt = rawPrompt || message;
-  let workspaceId = rawWsId;
+  let workspaceId = rawWsId || actor.workspaceId;
   if (!workspaceId && workspaceSlug) {
     const ws = await prisma.workspace.findUnique({ where: { slug: workspaceSlug } });
     workspaceId = ws?.id;
@@ -203,8 +202,8 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

@@ -1,16 +1,15 @@
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestActor } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { recordAuditLog } from '@/lib/audit';
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -43,11 +42,11 @@ export async function PATCH(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (session.user.role === 'Viewer') {
+  if (actor.role === 'Viewer') {
     return NextResponse.json({ error: 'Viewers have read-only access.' }, { status: 403 });
   }
 
@@ -76,6 +75,7 @@ export async function PATCH(
   if (typeof body.isPinned === 'boolean') updateData.isPinned = body.isPinned;
   if (typeof body.isLocked === 'boolean') updateData.isLocked = body.isLocked;
   if (typeof body.isPasswordProtected === 'boolean') updateData.isPasswordProtected = body.isPasswordProtected;
+  if (typeof body.sharePassword === 'string') updateData.sharePassword = body.sharePassword.trim() || null;
   if (typeof body.sharePermission === 'string') updateData.sharePermission = body.sharePermission;
   if (typeof body.isShared === 'boolean') {
     updateData.isShared = body.isShared;
@@ -115,14 +115,14 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (session.user.role === 'Viewer') {
+  if (actor.role === 'Viewer') {
     return NextResponse.json({ error: 'Viewers have read-only access.' }, { status: 403 });
   }
 
@@ -130,8 +130,8 @@ export async function DELETE(
   await prisma.resource.delete({ where: { id } });
 
   await recordAuditLog({
-    actorId: session.user.id,
-    actorEmail: session.user.email,
+    actorId: actor.id,
+    actorEmail: actor.email,
     action: 'RESOURCE_DELETED_PERMANENT',
     targetType: 'Resource',
     targetId: id,

@@ -8,6 +8,7 @@ declare module 'next-auth' {
       role: string;
       defaultWorkspaceSlug: string;
       hasFinishedOnboarding: boolean;
+      revoked?: boolean;
     } & DefaultSession['user'];
   }
 
@@ -16,6 +17,7 @@ declare module 'next-auth' {
     role: string;
     defaultWorkspaceSlug: string;
     hasFinishedOnboarding: boolean;
+    revoked?: boolean;
   }
 }
 
@@ -25,5 +27,6 @@ declare module 'next-auth/jwt' {
     role: string;
     defaultWorkspaceSlug: string;
     hasFinishedOnboarding: boolean;
+    revoked?: boolean;
   }
 }

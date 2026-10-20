@@ -169,6 +169,20 @@ export function ExpandedResourceModal() {
   }, [expandedResourceId]);
 
   useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      setCurrentTime((prev) => {
+        const next = prev + Math.max(1, Math.round(playbackSpeed));
+        if (next >= 144) {
+          return loopAudio ? 0 : 144;
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isPlaying, playbackSpeed, loopAudio]);
+
+  useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === 'Escape' && expandedResourceId) {
         if (slashMenuOpen) {
@@ -390,14 +404,32 @@ export function ExpandedResourceModal() {
                   <label className="flex items-center justify-between text-xs">
                     <span>Password protect</span>
                     <input
+                      data-testid="toggle-share-password-checkbox"
                       type="checkbox"
                       checked={resource.isPasswordProtected}
-                      onChange={(e) => handleSaveResource({ isPasswordProtected: e.target.checked })}
+                      onChange={(e) =>
+                        handleSaveResource({
+                          isPasswordProtected: e.target.checked,
+                          sharePassword: 'fabric2025',
+                        })
+                      }
                     />
                   </label>
                   {resource.isShared && (
-                    <div className="p-2 rounded-lg bg-[#F8F8F7] border border-[#E6E6E3] text-[11px] font-mono break-all">
-                      https://fabric.local/share/{resource.shareToken || resource.id}
+                    <div className="space-y-2">
+                      <div className="p-2 rounded-lg bg-[#F8F8F7] border border-[#E6E6E3] text-[11px] font-mono break-all">
+                        /share/{resource.shareToken || resource.id}
+                      </div>
+                      <a
+                        data-testid="open-public-share-link"
+                        href={`/share/${resource.shareToken || resource.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#2563EB] hover:underline"
+                      >
+                        <span>Open public share page</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
                     </div>
                   )}
                 </div>
@@ -594,17 +626,29 @@ export function ExpandedResourceModal() {
                           }}
                           className="absolute rounded-2xl border border-black/10 shadow-md p-4 flex flex-col justify-between"
                         >
-                          <input
-                            type="text"
-                            value={node.title}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setCanvasNodes((prev) =>
-                                prev.map((n) => (n.id === node.id ? { ...n, title: val } : n))
-                              );
-                            }}
-                            className="font-semibold text-xs bg-transparent focus:outline-none mb-1.5 text-[#191918]"
-                          />
+                          <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <input
+                              type="text"
+                              value={node.title}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCanvasNodes((prev) =>
+                                  prev.map((n) => (n.id === node.id ? { ...n, title: val } : n))
+                                );
+                              }}
+                              className="font-semibold text-xs bg-transparent focus:outline-none text-[#191918] flex-1 min-w-0"
+                            />
+                            <button
+                              type="button"
+                              title="Remove card"
+                              onClick={() =>
+                                setCanvasNodes((prev) => prev.filter((n) => n.id !== node.id))
+                              }
+                              className="text-black/40 hover:text-red-600 p-0.5"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                           <textarea
                             value={node.content}
                             onChange={(e) => {

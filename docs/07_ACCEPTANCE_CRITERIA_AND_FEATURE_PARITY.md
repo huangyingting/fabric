@@ -21,9 +21,18 @@
 
 ## 2. Acceptance Criteria Checklist
 
-- [ ] **AC-1 (Invite-Only Security)**: Uninvited registration attempts on `/signup` or `/api/auth/register` are rejected (`403`). Valid single-use invitation codes succeed once, assign the configured role (`Admin`, `Editor`, `Viewer`), cannot be reused, cannot be used if expired or revoked, and record `AuditLog` entries.
-- [ ] **AC-2 (CLI Admin Bootstrap)**: Running `npm run bootstrap:admin` provisions the initial Admin account and sample invitation codes without exposing any public HTTP bootstrap endpoint.
-- [ ] **AC-3 (Dual Database Support)**: Local development runs cleanly against SQLite (`prisma/schema.prisma`), and production schema (`prisma/schema.postgres.prisma`) + driver adapter (`@prisma/adapter-pg`) are ready for PostgreSQL.
-- [ ] **AC-4 (Pluggable AI Layer)**: `src/lib/ai/` implements `@github/copilot-sdk` as default provider and `azure-openai` as pluggable provider, switchable via `AI_PROVIDER` environment variable or workspace settings.
-- [ ] **AC-5 (Multimodal Resource Lifecycle)**: Users can create, view, edit, tag, search, comment on (with spatial pins and timestamps), share, soft-delete to `/bin`, and restore Notes, Canvases, Links, Voice Notes, Uploads, PDFs, Videos, Audio, Images, and Spaces.
-- [ ] **AC-6 (End-to-End Verification)**: All pages, modals, settings tabs, RBAC flows, and AI capabilities pass automated Playwright E2E tests.
+- [x] **AC-1 (Invite-Only Security)**: Uninvited registration attempts on `/signup` or `/api/auth/register` are rejected (`403`). Valid single-use invitation codes succeed once, assign the configured role (`Admin`, `Editor`, `Viewer`), cannot be reused, cannot be used if expired or revoked, and record `AuditLog` entries.
+- [x] **AC-2 (CLI Admin Bootstrap)**: Running `npm run bootstrap:admin` provisions the initial Admin account and sample invitation codes without exposing any public HTTP bootstrap endpoint.
+- [x] **AC-3 (Dual Database Support)**: Local development runs cleanly against SQLite (`prisma/schema.prisma`), and production schema (`prisma/schema.postgres.prisma`) + driver adapter (`@prisma/adapter-pg`) are ready for PostgreSQL.
+- [x] **AC-4 (Pluggable AI Layer)**: `src/lib/ai/` implements `@github/copilot-sdk` as default provider and `azure-openai` as pluggable provider, switchable via `AI_PROVIDER` environment variable or workspace settings.
+- [x] **AC-5 (Multimodal Resource Lifecycle)**: Users can create, view, edit, tag, search, comment on (with spatial pins and timestamps), share, soft-delete to `/bin`, and restore Notes, Canvases, Links, Voice Notes, Uploads, PDFs, Videos, Audio, Images, and Spaces.
+- [x] **AC-6 (End-to-End Verification)**: All pages, modals, settings tabs, RBAC flows, and AI capabilities pass automated Playwright E2E tests (`7 passed`).
+- [x] **AC-7 (Production Hardening & Enterprise Readiness)**:
+  - Unified session + `Bearer fbrc_live_...` / `x-api-key` personal API key authentication (`getRequestActor`).
+  - User account revocation (`User.revokedAt`) enforced at login, JWT session refresh, and API key validation.
+  - Self-service SHA-256 token password recovery (`/api/auth/reset-password` & `/reset-password`).
+  - Binary & text `multipart/form-data` uploads (`/api/uploads`) persisted to `/uploads/` with automatic text indexing and storage quota tracking.
+  - Live URL web clipper (`/api/clip`) scraping HTML `<title>`, OpenGraph tags, and body excerpt.
+  - Public resource sharing (`/share/[token]` & `/api/share/[token]`) with optional password protection gate.
+  - Container readiness probe (`GET /api/health`), Docker `HEALTHCHECK`, and HTTP security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`).
+

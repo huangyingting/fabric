@@ -1,4 +1,6 @@
+import crypto from 'node:crypto';
 import type { NextAuthOptions } from 'next-auth';
+import { getServerSession } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import { prisma } from './prisma';
@@ -45,6 +47,18 @@ export const authOptions: NextAuthOptions = {
             metadata: { reason: 'User not found or missing password credential' },
           });
           throw new Error('Invalid email or password.');
+        }
+
+        if (user.revokedAt) {
+          await recordAuditLog({
+            actorId: user.id,
+            actorEmail: user.email,
+            action: 'USER_LOGIN_BLOCKED_REVOKED',
+            targetType: 'User',
+            targetId: user.id,
+            metadata: { revokedAt: user.revokedAt.toISOString() },
+          });
+          throw new Error('Your account access has been revoked by an administrator.');
         }
 
         const valid = await bcrypt.compare(credentials.password, user.passwordCredential.passwordHash);
@@ -125,9 +139,12 @@ export const authOptions: NextAuthOptions = {
           token.role = dbUser.role;
           token.name = dbUser.name;
           token.hasFinishedOnboarding = dbUser.hasFinishedOnboarding;
+          token.revoked = Boolean(dbUser.revokedAt);
           if (dbUser.ownedWorkspaces[0]) {
             token.defaultWorkspaceSlug = dbUser.ownedWorkspaces[0].slug;
           }
+        } else {
+          token.revoked = true;
         }
       }
 
@@ -135,13 +152,74 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.id;
+        session.user.id = token.revoked ? '' : token.id;
         session.user.role = token.role;
         session.user.defaultWorkspaceSlug = token.defaultWorkspaceSlug;
         session.user.hasFinishedOnboarding = token.hasFinishedOnboarding;
+        session.user.revoked = Boolean(token.revoked);
       }
       return session;
     },
   },
   secret: process.env.NEXTAUTH_SECRET || 'fabric-super-secret-dev-key-change-in-production-2025',
 };
+
+export interface AuthenticatedActor {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string;
+  defaultWorkspaceSlug?: string;
+  workspaceId?: string;
+  authType: 'session' | 'api-key';
+}
+
+export async function getRequestActor(req?: Request): Promise<AuthenticatedActor | null> {
+  const session = await getServerSession(authOptions);
+  if (session?.user?.id && !session.user.revoked) {
+    return {
+      id: session.user.id,
+      email: session.user.email || '',
+      name: session.user.name || null,
+      role: session.user.role || 'Editor',
+      defaultWorkspaceSlug: session.user.defaultWorkspaceSlug,
+      authType: 'session',
+    };
+  }
+
+  if (req) {
+    const authHeader = req.headers.get('authorization') || '';
+    const apiKeyHeader = req.headers.get('x-api-key') || '';
+    const rawToken = authHeader.toLowerCase().startsWith('bearer ')
+      ? authHeader.slice(7).trim()
+      : apiKeyHeader.trim();
+
+    if (rawToken && rawToken.startsWith('fbrc_')) {
+      const keyHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const apiKey = await prisma.apiKey.findUnique({
+        where: { keyHash },
+        include: {
+          user: true,
+          workspace: true,
+        },
+      });
+      if (apiKey && !apiKey.user.revokedAt) {
+        await prisma.apiKey.update({
+          where: { id: apiKey.id },
+          data: { lastUsedAt: new Date() },
+        });
+        return {
+          id: apiKey.user.id,
+          email: apiKey.user.email,
+          name: apiKey.user.name,
+          role: apiKey.user.role,
+          defaultWorkspaceSlug: apiKey.workspace.slug,
+          workspaceId: apiKey.workspaceId,
+          authType: 'api-key',
+        };
+      }
+    }
+  }
+
+  return null;
+}

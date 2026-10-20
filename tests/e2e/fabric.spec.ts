@@ -431,4 +431,121 @@ test.describe('Fabric Application — Full Feature & Combination E2E Verificatio
     await viewerContext.close();
     await context.close();
   });
+
+  test('7. Production Readiness: Healthcheck, Security Headers, Bearer API Key Auth, Multipart Upload, Public Share Gate & Account Revocation/Password Reset', async ({
+    browser,
+    request,
+  }) => {
+    // 7a. Healthcheck & Security Headers
+    const healthRes = await request.get('/api/health');
+    expect(healthRes.status()).toBe(200);
+    expect(healthRes.headers()['x-content-type-options']).toBe('nosniff');
+    expect(healthRes.headers()['x-frame-options']).toBe('SAMEORIGIN');
+    const healthJson = await healthRes.json();
+    expect(healthJson.status).toBe('ok');
+    expect(healthJson.database.connected).toBe(true);
+
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    await page.goto('/signin');
+    await page.getByTestId('signin-email').fill(ADMIN_EMAIL);
+    await page.getByTestId('signin-password').fill(ADMIN_PASSWORD);
+    await page.getByTestId('signin-submit').click();
+    await page.waitForURL(`**/${WORKSPACE_SLUG}/**`);
+
+    // 7b. Personal API Key Generation & Bearer Authentication
+    const apiKeyData = await page.evaluate(async () => {
+      const r = await fetch('/api/settings/api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Production Automation Bearer Key' }),
+      });
+      return r.json();
+    });
+    expect(apiKeyData.rawKey).toMatch(/^fbrc_live_/);
+
+    // Call /api/resources using ONLY the Bearer API Key (no session cookies)
+    const bearerRes = await request.get(`/api/resources?workspaceSlug=${WORKSPACE_SLUG}`, {
+      headers: { Authorization: `Bearer ${apiKeyData.rawKey}` },
+    });
+    expect(bearerRes.status()).toBe(200);
+    const bearerJson = await bearerRes.json();
+    expect(Array.isArray(bearerJson.resources)).toBe(true);
+    expect(bearerJson.resources.length).toBeGreaterThan(0);
+
+    // 7c. Multipart Binary File Upload via POST /api/uploads
+    const uploadRes = await request.post('/api/uploads', {
+      headers: { Authorization: `Bearer ${apiKeyData.rawKey}` },
+      multipart: {
+        workspaceSlug: WORKSPACE_SLUG,
+        title: 'Production Architecture Runbook.md',
+        file: {
+          name: 'runbook.md',
+          mimeType: 'text/markdown',
+          buffer: Buffer.from('# Production Runbook\n\nVerified multipart binary upload and text indexing.'),
+        },
+      },
+    });
+    expect(uploadRes.status()).toBe(201);
+    const uploadJson = await uploadRes.json();
+    expect(uploadJson.resource.url).toMatch(/^\/uploads\//);
+    expect(uploadJson.resource.content).toContain('Verified multipart binary upload');
+
+    // 7d. Public Share URL & Password Protection Gate
+    const sharedResourceId = uploadJson.resource.id;
+    const sharePatch = await page.evaluate(async (id) => {
+      const r = await fetch(`/api/resources/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isShared: true,
+          isPasswordProtected: true,
+          sharePassword: 'secret-share-pass',
+        }),
+      });
+      return r.json();
+    }, sharedResourceId);
+    const shareToken = sharePatch.resource.shareToken || sharedResourceId;
+
+    const anonContext = await browser.newContext();
+    const anonPage = await anonContext.newPage();
+    await anonPage.goto(`/share/${shareToken}`);
+    await expect(anonPage.getByTestId('share-password-gate')).toBeVisible();
+    await anonPage.getByTestId('share-password-input').fill('secret-share-pass');
+    await anonPage.getByTestId('share-unlock-btn').click();
+    await expect(anonPage.getByTestId('public-share-viewer')).toBeVisible();
+    await expect(anonPage.getByTestId('shared-resource-title')).toContainText('Production Architecture Runbook.md');
+
+    // 7e. User Revocation & Password Reset Recovery Flow
+    const usersList = await page.evaluate(async () => {
+      const r = await fetch('/api/admin/users');
+      return r.json();
+    });
+    const nonAdminUser = (usersList.users as Array<{ id: string; email: string }>).find(
+      (u) => u.email !== ADMIN_EMAIL
+    );
+    expect(nonAdminUser).toBeTruthy();
+
+    // Revoke non-admin user via Settings -> Users & Roles UI
+    await page.goto(`/${WORKSPACE_SLUG}/settings/users`);
+    await page.getByTestId(`toggle-revoke-${nonAdminUser!.email}`).click();
+    await expect(page.getByTestId(`admin-user-row-${nonAdminUser!.email}`)).toContainText('REVOKED');
+
+    // Restore non-admin user
+    await page.getByTestId(`toggle-revoke-${nonAdminUser!.email}`).click();
+    await expect(page.getByTestId(`toggle-revoke-${nonAdminUser!.email}`)).toContainText('Revoke Access');
+
+    // Complete self-service Password Reset flow on /reset-password
+    await anonPage.goto('/reset-password');
+    await anonPage.getByTestId('reset-email-input').fill(nonAdminUser!.email);
+    await anonPage.getByTestId('send-reset-link-btn').click();
+    await expect(anonPage.getByTestId('reset-token-input')).toBeVisible();
+    await anonPage.getByTestId('reset-new-password-input').fill('NewResetPassword789!');
+    await anonPage.getByTestId('confirm-password-reset-btn').click();
+    await expect(anonPage.getByTestId('password-reset-completed')).toBeVisible();
+
+    await anonContext.close();
+    await context.close();
+  });
 });

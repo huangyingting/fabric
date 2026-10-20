@@ -116,12 +116,20 @@ export default function SettingsSectionPage({
   >([]);
   const [auditFilter, setAuditFilter] = useState('');
 
-  // Workspace name state
+  // Workspace name & account state
   const [wsName, setWsName] = useState(workspace?.name || '');
+  const [accountName, setAccountName] = useState(currentUser?.name || '');
+  const [accountNewPassword, setAccountNewPassword] = useState('');
+  const [accountSavedMsg, setAccountSavedMsg] = useState<string | null>(null);
+  const [autoRenameEnabled, setAutoRenameEnabled] = useState(true);
 
   useEffect(() => {
     if (workspace?.name) setWsName(workspace.name);
   }, [workspace?.name]);
+
+  useEffect(() => {
+    if (currentUser?.name) setAccountName(currentUser.name);
+  }, [currentUser?.name]);
 
   useEffect(() => {
     if (section === 'api-keys') {
@@ -295,6 +303,61 @@ export default function SettingsSectionPage({
                 <div className="text-sm font-semibold mt-0.5">{currentUser?.role}</div>
               </div>
             </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setAccountSavedMsg(null);
+                await fetch('/api/workspaces', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    workspaceSlug,
+                    userName: accountName.trim() || undefined,
+                    newPassword: accountNewPassword || undefined,
+                  }),
+                });
+                setAccountNewPassword('');
+                setAccountSavedMsg('Account profile updated.');
+                await refreshWorkspace();
+              }}
+              className="max-w-md space-y-4 pt-4 border-t border-[#E6E6E3]"
+            >
+              <div>
+                <label className="block text-xs font-medium text-[#6B6B68] mb-1">Display Name</label>
+                <input
+                  data-testid="account-name-input"
+                  type="text"
+                  value={accountName}
+                  onChange={(e) => setAccountName(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#E6E6E3] bg-[#F8F8F7]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#6B6B68] mb-1">
+                  New Password (optional, min 8 chars)
+                </label>
+                <input
+                  data-testid="account-password-input"
+                  type="password"
+                  minLength={8}
+                  value={accountNewPassword}
+                  onChange={(e) => setAccountNewPassword(e.target.value)}
+                  placeholder="Leave blank to keep current password"
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-[#E6E6E3] bg-[#F8F8F7]"
+                />
+              </div>
+              {accountSavedMsg && (
+                <div className="text-xs font-medium text-emerald-700">{accountSavedMsg}</div>
+              )}
+              <button
+                data-testid="save-account-btn"
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-[#191918] text-white text-xs font-medium"
+              >
+                Save Account Changes
+              </button>
+            </form>
           </div>
         )}
 
@@ -317,12 +380,33 @@ export default function SettingsSectionPage({
               </div>
               <div className="flex items-center justify-between p-4 rounded-xl bg-[#F8F8F7] border border-[#E6E6E3]">
                 <div>
-                  <div className="text-xs font-semibold">Semantic Auto-Tagging</div>
-                  <div className="text-[11px] text-[#6B6B68]">Automatically suggest tags on new captures</div>
+                  <div className="text-xs font-semibold">Semantic Auto-Rename & Auto-Tagging</div>
+                  <div className="text-[11px] text-[#6B6B68]">Automatically title and tag generic captures</div>
                 </div>
-                <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold">
-                  Enabled
-                </span>
+                <button
+                  data-testid="toggle-auto-rename-btn"
+                  type="button"
+                  onClick={async () => {
+                    const next = !autoRenameEnabled;
+                    setAutoRenameEnabled(next);
+                    await fetch('/api/workspaces', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        workspaceSlug,
+                        settings: { autoRenameEnabled: next },
+                      }),
+                    });
+                    await refreshWorkspace();
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                    autoRenameEnabled
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : 'bg-white border border-[#E6E6E3] text-[#6B6B68]'
+                  }`}
+                >
+                  {autoRenameEnabled ? 'Enabled' : 'Disabled'}
+                </button>
               </div>
             </div>
           </div>
@@ -537,11 +621,16 @@ export default function SettingsSectionPage({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="p-4 rounded-xl bg-[#F8F8F7] border border-[#E6E6E3]">
                 <div className="text-xs text-[#6B6B68]">Storage Used</div>
-                <div className="text-lg font-bold mt-1">44.2 MB / 5 GB</div>
+                <div className="text-lg font-bold mt-1">
+                  {((workspace?.storageUsedBytes || 24850120) / (1024 * 1024)).toFixed(1)} MB /{' '}
+                  {Math.round((workspace?.storageLimitBytes || 1073741824) / (1024 * 1024 * 1024))} GB
+                </div>
               </div>
               <div className="p-4 rounded-xl bg-[#F8F8F7] border border-[#E6E6E3]">
                 <div className="text-xs text-[#6B6B68]">AI Credits</div>
-                <div className="text-lg font-bold mt-1">Unlimited (Copilot SDK)</div>
+                <div className="text-lg font-bold mt-1">
+                  {workspace?.aiCreditsUsed || 45} / {workspace?.aiCreditsLimit || 1000} ({activeAiProvider})
+                </div>
               </div>
               <div className="p-4 rounded-xl bg-[#F8F8F7] border border-[#E6E6E3]">
                 <div className="text-xs text-[#6B6B68]">Scheduled Agents</div>
