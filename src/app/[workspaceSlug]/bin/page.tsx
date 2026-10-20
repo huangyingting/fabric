@@ -32,16 +32,49 @@ export default function TrashBinPage() {
     await refreshWorkspace();
   }
 
+  async function handleBulkTrashAction(action: 'restore-all' | 'empty-trash') {
+    await fetch('/api/resources/trash', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceSlug, action }),
+    });
+    await loadTrashed();
+    await refreshWorkspace();
+  }
+
   return (
     <div data-testid="bin-page" className="max-w-5xl mx-auto p-6 sm:p-8 space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-white border border-[#E6E6E3] flex items-center justify-center">
-          <Trash2 className="w-4 h-4 text-[#191918]" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-white border border-[#E6E6E3] flex items-center justify-center">
+            <Trash2 className="w-4 h-4 text-[#191918]" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold text-[#191918]">Trash</h1>
+            <p className="text-xs text-[#6B6B68]">Restore soft-deleted resources or purge them permanently</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-semibold text-[#191918]">Trash</h1>
-          <p className="text-xs text-[#6B6B68]">Restore soft-deleted resources or purge them permanently</p>
-        </div>
+
+        {trashed.length > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              data-testid="restore-all-trash-btn"
+              type="button"
+              onClick={() => handleBulkTrashAction('restore-all')}
+              className="px-3.5 py-1.5 rounded-xl bg-white border border-[#E6E6E3] hover:bg-[#F3F3F1] text-xs font-medium flex items-center gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Restore All ({trashed.length})
+            </button>
+            <button
+              data-testid="empty-trash-btn"
+              type="button"
+              onClick={() => handleBulkTrashAction('empty-trash')}
+              className="px-3.5 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs font-medium flex items-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Empty Trash
+            </button>
+          </div>
+        )}
       </div>
 
       {trashed.length === 0 ? (

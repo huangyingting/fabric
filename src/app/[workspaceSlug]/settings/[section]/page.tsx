@@ -536,31 +536,58 @@ export default function SettingsSectionPage({
 
         {/* 6. WORKSPACE */}
         {section === 'workspace' && (
-          <div className="space-y-4 max-w-md">
-            <h2 className="text-lg font-semibold">Workspace Settings</h2>
-            <div>
-              <label className="block text-xs text-[#6B6B68] mb-1">Workspace Name</label>
-              <input
-                type="text"
-                value={wsName}
-                onChange={(e) => setWsName(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm rounded-xl border border-[#E6E6E3] bg-[#F8F8F7]"
-              />
+          <div className="space-y-6 max-w-lg">
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold">Workspace Settings</h2>
+              <div>
+                <label className="block text-xs text-[#6B6B68] mb-1">Workspace Name</label>
+                <input
+                  type="text"
+                  value={wsName}
+                  onChange={(e) => setWsName(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm rounded-xl border border-[#E6E6E3] bg-[#F8F8F7]"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  await fetch('/api/workspaces', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ workspaceSlug, name: wsName }),
+                  });
+                  await refreshWorkspace();
+                }}
+                className="px-4 py-2 rounded-xl bg-[#191918] text-white text-xs font-medium"
+              >
+                Update Workspace
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={async () => {
-                await fetch('/api/workspaces', {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ workspaceSlug, name: wsName }),
-                });
-                await refreshWorkspace();
-              }}
-              className="px-4 py-2 rounded-xl bg-[#191918] text-white text-xs font-medium"
-            >
-              Update Workspace
-            </button>
+
+            <div className="pt-6 border-t border-[#E6E6E3] space-y-3">
+              <h3 className="text-sm font-semibold">Data Portability & Full Workspace Export</h3>
+              <p className="text-xs text-[#6B6B68]">
+                Download a complete snapshot of all Spaces, Notes, Canvases, Bookmarks, Tags, and Annotations.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  data-testid="export-workspace-json-btn"
+                  href={`/api/export?workspaceSlug=${encodeURIComponent(workspaceSlug)}&format=json`}
+                  download
+                  className="px-3.5 py-2 rounded-xl bg-[#191918] text-white text-xs font-medium"
+                >
+                  Export JSON Archive
+                </a>
+                <a
+                  data-testid="export-workspace-md-btn"
+                  href={`/api/export?workspaceSlug=${encodeURIComponent(workspaceSlug)}&format=markdown`}
+                  download
+                  className="px-3.5 py-2 rounded-xl bg-white border border-[#E6E6E3] hover:bg-[#F3F3F1] text-xs font-medium"
+                >
+                  Export Markdown Bundle (.md)
+                </a>
+              </div>
+            </div>
           </div>
         )}
 
@@ -642,11 +669,35 @@ export default function SettingsSectionPage({
 
         {/* 10. IMPORT */}
         {section === 'import' && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Import Knowledge into Fabric</h2>
-            <p className="text-xs text-[#6B6B68]">
-              Import notes, bookmarks, and markdown vaults from Notion, Obsidian, Raindrop.io, or Apple Notes.
-            </p>
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-lg font-semibold">Import & Export Knowledge</h2>
+              <p className="text-xs text-[#6B6B68]">
+                Import notes, bookmarks, and markdown vaults from Notion, Obsidian, Raindrop.io, or local files.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-[#F8F8F7] border border-[#E6E6E3] space-y-2">
+              <div className="text-xs font-semibold">Direct File Import (.md, .txt, .json, .csv, .pdf)</div>
+              <input
+                data-testid="settings-import-file-input"
+                type="file"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  const fd = new FormData();
+                  fd.append('workspaceSlug', workspaceSlug);
+                  fd.append('title', f.name);
+                  fd.append('file', f);
+                  const res = await fetch('/api/uploads', { method: 'POST', body: fd });
+                  if (res.ok) {
+                    await refreshWorkspace();
+                  }
+                }}
+                className="w-full text-xs text-[#6B6B68] file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-[#191918] file:text-white file:text-xs file:font-medium"
+              />
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {['Notion Workspace (.zip / API)', 'Obsidian Markdown Vault', 'Raindrop.io Bookmarks', 'Apple Notes & Evernote'].map(
                 (src) => (

@@ -1,19 +1,18 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestActor } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const { searchParams } = new URL(req.url);
-  const workspaceId = searchParams.get('workspaceId');
+  const workspaceId = searchParams.get('workspaceId') || actor.workspaceId;
 
   const notifications = await prisma.notification.findMany({
-    where: workspaceId ? { workspaceId } : { userId: session.user.id },
+    where: workspaceId ? { workspaceId } : { userId: actor.id },
     orderBy: { createdAt: 'desc' },
     take: 50,
   });
@@ -22,8 +21,8 @@ export async function GET(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

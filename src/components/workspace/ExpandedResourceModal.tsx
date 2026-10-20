@@ -112,6 +112,8 @@ export function ExpandedResourceModal() {
   // Comments state
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [newCommentText, setNewCommentText] = useState('');
+  const [sharePasscodeInput, setSharePasscodeInput] = useState('fabric2025');
+  const [copiedShareUrl, setCopiedShareUrl] = useState(false);
 
   // AI Chat state for current file
   const [aiMessages, setAiMessages] = useState<Array<{ role: string; content: string; model?: string; provider?: string }>>([]);
@@ -270,6 +272,28 @@ export function ExpandedResourceModal() {
     }
   }
 
+  async function handleToggleCommentResolved(comment: CommentItem) {
+    const res = await fetch('/api/comments', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: comment.id, resolved: !comment.resolved }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setComments((prev) => prev.map((c) => (c.id === comment.id ? data.comment : c)));
+    }
+  }
+
+  async function handleDeleteComment(commentId: string) {
+    const res = await fetch(`/api/comments?id=${encodeURIComponent(commentId)}`, {
+      method: 'DELETE',
+    });
+    if (res.ok) {
+      setComments((prev) => prev.filter((c) => c.id !== commentId));
+      await refreshWorkspace();
+    }
+  }
+
   async function handleSendAi(promptToSend: string, actionName?: string) {
     if (!resource || !workspace) return;
     const text = promptToSend.trim();
@@ -410,15 +434,52 @@ export function ExpandedResourceModal() {
                       onChange={(e) =>
                         handleSaveResource({
                           isPasswordProtected: e.target.checked,
-                          sharePassword: 'fabric2025',
+                          sharePassword: sharePasscodeInput || 'fabric2025',
                         })
                       }
                     />
                   </label>
+                  {resource.isPasswordProtected && (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        data-testid="share-custom-passcode-input"
+                        type="text"
+                        value={sharePasscodeInput}
+                        onChange={(e) => setSharePasscodeInput(e.target.value)}
+                        placeholder="Passcode..."
+                        className="flex-1 px-2.5 py-1 text-xs rounded-lg border border-[#E6E6E3] bg-[#F8F8F7] font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleSaveResource({
+                            isPasswordProtected: true,
+                            sharePassword: sharePasscodeInput || 'fabric2025',
+                          })
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-[#191918] text-white text-[11px] font-medium"
+                      >
+                        Set
+                      </button>
+                    </div>
+                  )}
                   {resource.isShared && (
                     <div className="space-y-2">
-                      <div className="p-2 rounded-lg bg-[#F8F8F7] border border-[#E6E6E3] text-[11px] font-mono break-all">
-                        /share/{resource.shareToken || resource.id}
+                      <div className="p-2 rounded-lg bg-[#F8F8F7] border border-[#E6E6E3] text-[11px] font-mono break-all flex items-center justify-between gap-2">
+                        <span>/share/{resource.shareToken || resource.id}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(
+                              `${window.location.origin}/share/${resource.shareToken || resource.id}`
+                            );
+                            setCopiedShareUrl(true);
+                            setTimeout(() => setCopiedShareUrl(false), 1500);
+                          }}
+                          className="px-2 py-0.5 rounded bg-white border border-[#E6E6E3] text-[10px] font-sans font-medium shrink-0"
+                        >
+                          {copiedShareUrl ? 'Copied' : 'Copy'}
+                        </button>
                       </div>
                       <a
                         data-testid="open-public-share-link"
@@ -1218,7 +1279,9 @@ export function ExpandedResourceModal() {
                         <div
                           key={c.id}
                           data-testid={`comment-item-${idx}`}
-                          className="p-3 rounded-xl bg-white border border-[#E6E6E3] space-y-1.5"
+                          className={`p-3 rounded-xl bg-white border space-y-1.5 ${
+                            c.resolved ? 'border-emerald-200 opacity-75' : 'border-[#E6E6E3]'
+                          }`}
                         >
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="font-semibold text-[#191918]">
@@ -1241,9 +1304,33 @@ export function ExpandedResourceModal() {
                                   {c.page ? ` (p.${c.page})` : ''}
                                 </span>
                               )}
+                              <button
+                                data-testid={`toggle-resolve-comment-${idx}`}
+                                type="button"
+                                onClick={() => handleToggleCommentResolved(c)}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                  c.resolved
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-[#F3F3F1] text-[#6B6B68] hover:text-[#191918]'
+                                }`}
+                                title={c.resolved ? 'Mark unresolved' : 'Mark resolved'}
+                              >
+                                {c.resolved ? '✓ Resolved' : 'Resolve'}
+                              </button>
+                              <button
+                                data-testid={`delete-comment-${idx}`}
+                                type="button"
+                                onClick={() => handleDeleteComment(c.id)}
+                                className="p-0.5 text-[#9B9B97] hover:text-red-600"
+                                title="Delete comment"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
                             </div>
                           </div>
-                          <p className="text-xs text-[#191918]">{c.body}</p>
+                          <p className={`text-xs ${c.resolved ? 'line-through text-[#6B6B68]' : 'text-[#191918]'}`}>
+                            {c.body}
+                          </p>
                         </div>
                       ))
                     )}

@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CalendarClock, Plus, Play, Sparkles, X, CheckCircle2 } from 'lucide-react';
+import { CalendarClock, Plus, Play, Pause, Trash2, FileText, Sparkles, X, CheckCircle2 } from 'lucide-react';
 import { useWorkspace } from '@/components/workspace/WorkspaceContext';
 
 export default function TasksPage() {
-  const { workspaceSlug, scheduledTasks, refreshWorkspace } = useWorkspace();
+  const { workspaceSlug, scheduledTasks, refreshWorkspace, openExpandedResource } = useWorkspace();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused'>('all');
   const [title, setTitle] = useState('');
   const [prompt, setPrompt] = useState('');
   const [frequency, setFrequency] = useState<'Daily' | 'Weekly' | 'Monthly'>('Daily');
@@ -54,6 +55,28 @@ export default function TasksPage() {
     setRunningTaskId(null);
   }
 
+  async function handleToggleTaskStatus(taskId: string, currentStatus: string) {
+    const nextStatus = currentStatus === 'paused' ? 'active' : 'paused';
+    await fetch('/api/ai/tasks', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: taskId, status: nextStatus }),
+    });
+    await refreshWorkspace();
+  }
+
+  async function handleDeleteTask(taskId: string) {
+    await fetch(`/api/ai/tasks?id=${encodeURIComponent(taskId)}`, {
+      method: 'DELETE',
+    });
+    await refreshWorkspace();
+  }
+
+  const filteredTasks = scheduledTasks.filter((t) => {
+    if (statusFilter === 'all') return true;
+    return (t.status || 'active').toLowerCase() === statusFilter;
+  });
+
   return (
     <div data-testid="tasks-page" className="max-w-6xl mx-auto p-6 sm:p-8 space-y-6">
       <div className="flex items-center justify-between">
@@ -96,44 +119,107 @@ export default function TasksPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {scheduledTasks.map((task) => (
-          <div
-            key={task.id}
-            data-testid={`scheduled-task-card-${task.id}`}
-            className="p-5 rounded-2xl bg-white border border-[#E6E6E3] flex flex-col justify-between gap-4 shadow-2xs"
+      <div className="flex items-center gap-2">
+        {(['all', 'active', 'paused'] as const).map((tab) => (
+          <button
+            key={tab}
+            data-testid={`task-filter-${tab}`}
+            type="button"
+            onClick={() => setStatusFilter(tab)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium capitalize border ${
+              statusFilter === tab
+                ? 'bg-[#191918] text-white border-[#191918]'
+                : 'bg-white border-[#E6E6E3] text-[#6B6B68]'
+            }`}
           >
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-sm text-[#191918] flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-[#45BAF9]" /> {task.title}
-                </span>
-                <span className="px-2 py-0.5 rounded-full bg-[#F3F3F1] text-[10px] font-semibold">
-                  {task.frequency} · {task.timeOfDay}
-                </span>
-              </div>
-              <p className="text-xs text-[#6B6B68]">{task.prompt}</p>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-[#E6E6E3]/60 text-[11px] text-[#6B6B68]">
-              <span>
-                {task.lastRunAt
-                  ? `Last run: ${new Date(task.lastRunAt).toLocaleTimeString()}`
-                  : 'Ready to run'}
-              </span>
-              <button
-                data-testid={`run-task-now-${task.id}`}
-                type="button"
-                disabled={runningTaskId === task.id}
-                onClick={() => handleRunTaskNow(task.id)}
-                className="px-3 py-1.5 rounded-xl bg-[#191918] text-white text-xs font-medium flex items-center gap-1.5"
-              >
-                <Play className="w-3 h-3" />
-                {runningTaskId === task.id ? 'Running...' : 'Run now'}
-              </button>
-            </div>
-          </div>
+            {tab}
+          </button>
         ))}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {filteredTasks.map((task) => {
+          const isPaused = (task.status || 'active').toLowerCase() === 'paused';
+          return (
+            <div
+              key={task.id}
+              data-testid={`scheduled-task-card-${task.id}`}
+              className="p-5 rounded-2xl bg-white border border-[#E6E6E3] flex flex-col justify-between gap-4 shadow-2xs"
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-sm text-[#191918] flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-[#45BAF9]" /> {task.title}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
+                        isPaused
+                          ? 'bg-amber-50 text-amber-700'
+                          : 'bg-emerald-50 text-emerald-700'
+                      }`}
+                    >
+                      {isPaused ? 'Paused' : 'Active'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-[#F3F3F1] text-[10px] font-semibold">
+                      {task.frequency} · {task.timeOfDay}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs text-[#6B6B68]">{task.prompt}</p>
+                {task.lastResultResourceId && (
+                  <button
+                    data-testid={`open-task-report-${task.id}`}
+                    type="button"
+                    onClick={() => openExpandedResource(task.lastResultResourceId!)}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#2563EB] hover:underline pt-1"
+                  >
+                    <FileText className="w-3 h-3" />
+                    <span>Open Latest Digest Report</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-[#E6E6E3]/60 text-[11px] text-[#6B6B68]">
+                <span>
+                  {task.lastRunAt
+                    ? `Last run: ${new Date(task.lastRunAt).toLocaleTimeString()}`
+                    : 'Ready to run'}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    data-testid={`toggle-task-status-${task.id}`}
+                    type="button"
+                    onClick={() => handleToggleTaskStatus(task.id, task.status || 'active')}
+                    className="px-2.5 py-1.5 rounded-xl border border-[#E6E6E3] hover:bg-[#F3F3F1] text-xs font-medium flex items-center gap-1"
+                  >
+                    <Pause className="w-3 h-3" />
+                    <span>{isPaused ? 'Resume' : 'Pause'}</span>
+                  </button>
+                  <button
+                    data-testid={`delete-task-${task.id}`}
+                    type="button"
+                    onClick={() => handleDeleteTask(task.id)}
+                    className="p-1.5 rounded-xl border border-[#E6E6E3] hover:bg-red-50 hover:text-red-600 text-[#6B6B68]"
+                    title="Delete agent"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    data-testid={`run-task-now-${task.id}`}
+                    type="button"
+                    disabled={runningTaskId === task.id}
+                    onClick={() => handleRunTaskNow(task.id)}
+                    className="px-3 py-1.5 rounded-xl bg-[#191918] text-white text-xs font-medium flex items-center gap-1.5"
+                  >
+                    <Play className="w-3 h-3" />
+                    {runningTaskId === task.id ? 'Running...' : 'Run now'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Slide-over New AI Agent Drawer */}

@@ -545,6 +545,41 @@ test.describe('Fabric Application — Full Feature & Combination E2E Verificatio
     await anonPage.getByTestId('confirm-password-reset-btn').click();
     await expect(anonPage.getByTestId('password-reset-completed')).toBeVisible();
 
+    // 7f. Workspace Export (JSON & Markdown) via /api/export
+    const exportJsonRes = await request.get(`/api/export?workspaceSlug=${WORKSPACE_SLUG}&format=json`, {
+      headers: { Authorization: `Bearer ${apiKeyData.rawKey}` },
+    });
+    expect(exportJsonRes.status()).toBe(200);
+    const exportJson = await exportJsonRes.json();
+    expect(exportJson.workspace.slug).toBe(WORKSPACE_SLUG);
+    expect(exportJson.stats.totalResources).toBeGreaterThan(0);
+
+    const exportMdRes = await request.get(`/api/export?workspaceSlug=${WORKSPACE_SLUG}&format=markdown`, {
+      headers: { Authorization: `Bearer ${apiKeyData.rawKey}` },
+    });
+    expect(exportMdRes.status()).toBe(200);
+    const exportMdText = await exportMdRes.text();
+    expect(exportMdText).toContain('# Fabric Workspace Export:');
+
+    // 7g. Comment Creation, Resolution & Deletion inside ExpandedResourceModal
+    await page.goto(`/${WORKSPACE_SLUG}/home?expandedFdocId=${sharedResourceId}`);
+    await page.getByTestId('viewer-tab-comments').click();
+    await page.getByTestId('comment-input').fill('Verify comment resolve and delete');
+    await page.getByTestId('comment-submit').click();
+    await expect(page.getByTestId('comment-item-0')).toContainText('Verify comment resolve and delete');
+    await page.getByTestId('toggle-resolve-comment-0').click();
+    await expect(page.getByTestId('toggle-resolve-comment-0')).toContainText('Resolved');
+    await page.getByTestId('delete-comment-0').click();
+
+    // 7h. Scheduled AI Agent Pause/Resume & Tag Deletion
+    await page.goto(`/${WORKSPACE_SLUG}/tasks`);
+    const firstPauseBtn = page.locator('[data-testid^="toggle-task-status-"]').first();
+    await firstPauseBtn.click();
+    await page.getByTestId('task-filter-paused').click();
+    await expect(page.locator('[data-testid^="scheduled-task-card-"]').first()).toBeVisible();
+    await firstPauseBtn.click();
+    await page.getByTestId('task-filter-all').click();
+
     await anonContext.close();
     await context.close();
   });

@@ -1,19 +1,19 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestActor } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { recordAuditLog } from '@/lib/audit';
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (session.user.role === 'Viewer') {
+  if (actor.role === 'Viewer') {
     return NextResponse.json({ error: 'Viewers have read-only access.' }, { status: 403 });
   }
 
   const body = await req.json();
-  const { workspaceId, resourceId, action } = body;
+  const { workspaceId: rawWsId, workspaceSlug, resourceId, action } = body;
 
   if (resourceId && (action === 'restore' || action === 'purge')) {
     if (action === 'restore') {
@@ -27,23 +27,45 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  let workspaceId = rawWsId || actor.workspaceId;
+  if (!workspaceId && workspaceSlug) {
+    const ws = await prisma.workspace.findUnique({ where: { slug: workspaceSlug } });
+    workspaceId = ws?.id;
+  }
+
   if (!workspaceId) {
-    return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 });
+    return NextResponse.json({ error: 'workspaceId or workspaceSlug is required' }, { status: 400 });
   }
 
   if (action === 'restore-all') {
-    await prisma.resource.updateMany({
+    const res = await prisma.resource.updateMany({
       where: { workspaceId, deletedAt: { not: null } },
       data: { deletedAt: null },
     });
-    return NextResponse.json({ ok: true });
+    await recordAuditLog({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'TRASH_RESTORED_ALL',
+      targetType: 'Workspace',
+      targetId: workspaceId,
+      metadata: { count: res.count },
+    });
+    return NextResponse.json({ ok: true, count: res.count });
   }
 
   if (action === 'empty-trash') {
-    await prisma.resource.deleteMany({
+    const res = await prisma.resource.deleteMany({
       where: { workspaceId, deletedAt: { not: null } },
     });
-    return NextResponse.json({ ok: true });
+    await recordAuditLog({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'TRASH_EMPTIED',
+      targetType: 'Workspace',
+      targetId: workspaceId,
+      metadata: { count: res.count },
+    });
+    return NextResponse.json({ ok: true, count: res.count });
   }
 
   return NextResponse.json({ error: 'Unknown trash action' }, { status: 400 });

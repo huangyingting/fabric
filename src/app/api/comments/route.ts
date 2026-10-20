@@ -56,6 +56,35 @@ export async function POST(req: Request) {
   return NextResponse.json({ comment }, { status: 201 });
 }
 
+export async function PATCH(req: Request) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (actor.role === 'Viewer') {
+    return NextResponse.json({ error: 'Viewers have read-only access.' }, { status: 403 });
+  }
+
+  const body = await req.json();
+  const { id, resolved, text } = body;
+  if (!id) {
+    return NextResponse.json({ error: 'Comment id required' }, { status: 400 });
+  }
+
+  const updated = await prisma.comment.update({
+    where: { id },
+    data: {
+      ...(typeof resolved === 'boolean' ? { resolved } : {}),
+      ...(typeof text === 'string' && text.trim() ? { body: text.trim() } : {}),
+    },
+    include: {
+      author: { select: { id: true, name: true, email: true } },
+    },
+  });
+
+  return NextResponse.json({ comment: updated });
+}
+
 export async function DELETE(req: Request) {
   const actor = await getRequestActor(req);
   if (!actor) {

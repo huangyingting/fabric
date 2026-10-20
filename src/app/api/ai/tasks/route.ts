@@ -1,18 +1,17 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestActor } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { AIPersonality, runAICompletion } from '@/lib/ai';
 import { recordAuditLog } from '@/lib/audit';
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const { searchParams } = new URL(req.url);
-  const workspaceId = searchParams.get('workspaceId');
+  const workspaceId = searchParams.get('workspaceId') || actor.workspaceId;
 
   const tasks = await prisma.aiTask.findMany({
     where: workspaceId ? { workspaceId } : undefined,
@@ -23,11 +22,11 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (session.user.role === 'Viewer') {
+  if (actor.role === 'Viewer') {
     return NextResponse.json({ error: 'Viewers have read-only access.' }, { status: 403 });
   }
 
@@ -84,7 +83,7 @@ export async function POST(req: Request) {
         mimeType: 'application/vnd.fabric.notepad',
         size: Buffer.byteLength(completion.content, 'utf8'),
         content: `# ${existing.name}\n\n*Executed at ${new Date().toLocaleString()} via \`${completion.provider}\`*\n\n${completion.content}`,
-        createdById: session.user.id,
+        createdById: actor.id,
       },
     });
 
@@ -98,8 +97,8 @@ export async function POST(req: Request) {
     });
 
     await recordAuditLog({
-      actorId: session.user.id,
-      actorEmail: session.user.email,
+      actorId: actor.id,
+      actorEmail: actor.email,
       action: 'AI_TASK_EXECUTED',
       targetType: 'AiTask',
       targetId: updated.id,
@@ -150,11 +149,11 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (session.user.role === 'Viewer') {
+  if (actor.role === 'Viewer') {
     return NextResponse.json({ error: 'Viewers have read-only access.' }, { status: 403 });
   }
 
@@ -199,7 +198,7 @@ export async function PATCH(req: Request) {
         mimeType: 'application/vnd.fabric.notepad',
         size: Buffer.byteLength(completion.content, 'utf8'),
         content: `# ${existing.name}\n\n*Executed at ${new Date().toLocaleString()} via \`${completion.provider}\`*\n\n${completion.content}`,
-        createdById: session.user.id,
+        createdById: actor.id,
       },
     });
 
@@ -213,8 +212,8 @@ export async function PATCH(req: Request) {
     });
 
     await recordAuditLog({
-      actorId: session.user.id,
-      actorEmail: session.user.email,
+      actorId: actor.id,
+      actorEmail: actor.email,
       action: 'AI_TASK_EXECUTED',
       targetType: 'AiTask',
       targetId: updated.id,
@@ -235,9 +234,12 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (actor.role === 'Viewer') {
+    return NextResponse.json({ error: 'Viewers have read-only access.' }, { status: 403 });
   }
 
   const { searchParams } = new URL(req.url);

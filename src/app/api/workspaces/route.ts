@@ -1,25 +1,24 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import bcrypt from 'bcryptjs';
-import { authOptions } from '@/lib/auth';
+import { getRequestActor } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { ensureUserWorkspace } from '@/lib/workspace-provisioning';
 import { recordAuditLog } from '@/lib/audit';
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const { searchParams } = new URL(req.url);
   const slug = searchParams.get('slug');
 
-  await ensureUserWorkspace(session.user.id, session.user.name || null, session.user.email || '');
+  await ensureUserWorkspace(actor.id, actor.name || null, actor.email || '');
 
   const workspaces = await prisma.workspace.findMany({
     where: {
-      OR: [{ ownerId: session.user.id }, { members: { some: { userId: session.user.id } } }],
+      OR: [{ ownerId: actor.id }, { members: { some: { userId: actor.id } } }],
     },
     orderBy: { createdAt: 'asc' },
   });
@@ -81,7 +80,7 @@ export async function GET(req: Request) {
       orderBy: { createdAt: 'desc' },
     }),
     prisma.user.findUnique({
-      where: { id: session.user.id },
+      where: { id: actor.id },
       select: {
         id: true,
         email: true,
@@ -110,15 +109,15 @@ export async function GET(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const body = await req.json();
   const { workspaceId, workspaceSlug, aiProvider, aiModel, name, planTier, settings, userName, newPassword, agentUpdate, giftCode } = body;
 
-  let resolvedWorkspaceId = workspaceId;
+  let resolvedWorkspaceId = workspaceId || actor.workspaceId;
   if (!resolvedWorkspaceId && workspaceSlug) {
     const ws = await prisma.workspace.findUnique({ where: { slug: workspaceSlug } });
     resolvedWorkspaceId = ws?.id;
@@ -127,16 +126,16 @@ export async function PATCH(req: Request) {
   if (userName || newPassword) {
     if (userName) {
       await prisma.user.update({
-        where: { id: session.user.id },
+        where: { id: actor.id },
         data: { name: String(userName).trim() },
       });
     }
     if (newPassword && String(newPassword).length >= 8) {
       const passwordHash = await bcrypt.hash(String(newPassword), 10);
       await prisma.passwordCredential.upsert({
-        where: { userId: session.user.id },
+        where: { userId: actor.id },
         update: { passwordHash },
-        create: { userId: session.user.id, passwordHash },
+        create: { userId: actor.id, passwordHash },
       });
     }
   }
@@ -184,8 +183,8 @@ export async function PATCH(req: Request) {
       });
 
       await recordAuditLog({
-        actorId: session.user.id,
-        actorEmail: session.user.email,
+        actorId: actor.id,
+        actorEmail: actor.email,
         action: 'WORKSPACE_UPDATED',
         targetType: 'Workspace',
         targetId: updated.id,

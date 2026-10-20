@@ -1,16 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestActor } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const { searchParams } = new URL(req.url);
-  const workspaceId = searchParams.get('workspaceId');
+  const workspaceId = searchParams.get('workspaceId') || actor.workspaceId;
 
   const actions = await prisma.aiAction.findMany({
     where: workspaceId ? { workspaceId } : undefined,
@@ -21,18 +20,18 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (session.user.role === 'Viewer') {
+  if (actor.role === 'Viewer') {
     return NextResponse.json({ error: 'Viewers have read-only access.' }, { status: 403 });
   }
 
   const body = await req.json();
   const { workspaceId: rawWsId, workspaceSlug, name, prompt, icon = 'Sparkles' } = body;
 
-  let workspaceId = rawWsId;
+  let workspaceId = rawWsId || actor.workspaceId;
   if (!workspaceId && workspaceSlug) {
     const ws = await prisma.workspace.findUnique({ where: { slug: workspaceSlug } });
     workspaceId = ws?.id;
@@ -60,9 +59,12 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const actor = await getRequestActor(req);
+  if (!actor) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (actor.role === 'Viewer') {
+    return NextResponse.json({ error: 'Viewers have read-only access.' }, { status: 403 });
   }
 
   const { searchParams } = new URL(req.url);

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Tag as TagIcon, Plus } from 'lucide-react';
+import { Tag as TagIcon, Plus, X } from 'lucide-react';
 import { useWorkspace } from '@/components/workspace/WorkspaceContext';
 import { ResourceGrid } from '@/components/workspace/ResourceGrid';
 
@@ -24,6 +24,15 @@ export default function TagsPage() {
       }),
     });
     setNewTagName('');
+    await refreshWorkspace();
+  }
+
+  async function handleDeleteTag(e: React.MouseEvent, tagId: string) {
+    e.stopPropagation();
+    await fetch(`/api/tags?id=${encodeURIComponent(tagId)}`, {
+      method: 'DELETE',
+    });
+    if (selectedTagId === tagId) setSelectedTagId(null);
     await refreshWorkspace();
   }
 
@@ -84,12 +93,11 @@ export default function TagsPage() {
         </button>
 
         {tags.map((tag) => (
-          <button
+          <div
             key={tag.id}
             data-testid={`tag-pill-${tag.name}`}
-            type="button"
             onClick={() => setSelectedTagId(tag.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-2 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium border flex items-center gap-2 cursor-pointer ${
               selectedTagId === tag.id
                 ? 'bg-[#191918] text-white border-[#191918]'
                 : 'bg-white border-[#E6E6E3]'
@@ -97,7 +105,19 @@ export default function TagsPage() {
           >
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: tag.color }} />
             <span>#{tag.name}</span>
-          </button>
+            {typeof tag._count?.resources === 'number' && (
+              <span className="text-[10px] opacity-70">({tag._count.resources})</span>
+            )}
+            <button
+              data-testid={`delete-tag-${tag.name}`}
+              type="button"
+              onClick={(e) => handleDeleteTag(e, tag.id)}
+              className="opacity-60 hover:opacity-100 p-0.5 rounded"
+              title={`Delete #${tag.name}`}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
         ))}
       </div>
 
