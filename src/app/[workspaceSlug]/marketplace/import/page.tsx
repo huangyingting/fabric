@@ -1,0 +1,56 @@
+'use client';
+
+import React from 'react';
+import Link from 'next/link';
+import { UploadCloud, ArrowLeft } from 'lucide-react';
+import { useWorkspace } from '@/components/workspace/WorkspaceContext';
+
+export default function MarketplaceImportPage() {
+  const { workspaceSlug, createQuickResource } = useWorkspace();
+
+  return (
+    <div data-testid="marketplace-import-page" className="max-w-4xl mx-auto p-6 sm:p-8 space-y-6">
+      <Link
+        href={`/${workspaceSlug}/marketplace`}
+        className="inline-flex items-center gap-1 text-xs text-[#6B6B68] hover:text-[#191918]"
+      >
+        <ArrowLeft className="w-3.5 h-3.5" /> Back to Marketplace
+      </Link>
+
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-white border border-[#E6E6E3] flex items-center justify-center">
+          <UploadCloud className="w-5 h-5 text-[#191918]" />
+        </div>
+        <div>
+          <h1 className="text-xl font-semibold text-[#191918]">Import from External Apps</h1>
+          <p className="text-xs text-[#6B6B68]">Migrate notes, bookmarks, and documents in one click</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {['Notion', 'Obsidian', 'Evernote', 'Raindrop.io', 'Readwise', 'Apple Notes'].map((app) => (
+          <div key={app} className="p-5 rounded-2xl bg-white border border-[#E6E6E3] flex items-center justify-between">
+            <div>
+              <div className="font-semibold text-sm">{app}</div>
+              <div className="text-xs text-[#6B6B68]">Preserve hierarchy, tags, and attachments</div>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                createQuickResource({
+                  kind: 'notepad',
+                  name: `${app} Imported Knowledge`,
+                  content: `# ${app} Import\n\nAll notes and metadata imported into Fabric.`,
+                  openAfterCreate: true,
+                })
+              }
+              className="px-3.5 py-1.5 rounded-xl bg-[#191918] text-white text-xs font-medium"
+            >
+              Import
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

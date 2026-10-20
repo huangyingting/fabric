@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --fabric-bg: #F8F8F7;
+  --fabric-surface: #FFFFFF;
+  --fabric-sidebar: #F3F3F1;
+  --fabric-border: #E6E6E3;
+  --fabric-ink: #191918;
+  --fabric-muted: #6B6B68;
+  --fabric-rue: #45BAF9;
+}
+
+body {
+  background-color: var(--fabric-bg);
+  color: var(--fabric-ink);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(107, 107, 104, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 107, 104, 0.45);
+}

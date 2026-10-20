@@ -1,0 +1,342 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id                    String               @id @default(cuid())
+  email                 String               @unique
+  name                  String?
+  image                 String?
+  role                  String               @default("Editor") // "Admin" | "Editor" | "Viewer"
+  hasFinishedOnboarding Boolean              @default(false)
+  onboardingData        String?              // JSON survey & onboarding choices
+  preferences           String?              // JSON UI & workspace preferences
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  passwordCredential    PasswordCredential?
+  createdInvitations    AccountInvitation[]  @relation("InvitationCreator")
+  acceptedInvitations   AccountInvitation[]  @relation("InvitationAcceptor")
+  ownedWorkspaces       Workspace[]          @relation("WorkspaceOwner")
+  memberships           WorkspaceMember[]
+  resources             Resource[]           @relation("ResourceCreator")
+  comments              Comment[]
+  notifications         Notification[]
+  apiKeys               ApiKey[]
+  auditLogs             AuditLog[]           @relation("AuditActor")
+}
+
+model PasswordCredential {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AccountInvitation {
+  id           String    @id @default(cuid())
+  codePrefix   String
+  tokenHash    String    @unique
+  invitedEmail String?
+  role         String    @default("Editor") // "Admin" | "Editor" | "Viewer"
+  status       String    @default("PENDING") // "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED"
+  maxUses      Int       @default(1)
+  useCount     Int       @default(0)
+  note         String?
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  revokedAt    DateTime?
+  createdById  String
+  acceptedById String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  createdBy    User      @relation("InvitationCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  acceptedBy   User?     @relation("InvitationAcceptor", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([invitedEmail])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorEmail String?
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([action])
+  @@index([createdAt])
+}
+
+model Workspace {
+  id                String            @id @default(cuid())
+  slug              String            @unique
+  name              String
+  type              String            @default("personal") // "personal" | "team"
+  planTier          String            @default("free")     // "free" | "pro" | "max" | "teams"
+  referralCode      String            @unique
+  storageUsedBytes  Int               @default(24850120)
+  storageLimitBytes Int               @default(1073741824)
+  aiCreditsUsed     Int               @default(45)
+  aiCreditsLimit    Int               @default(1000)
+  settings          String?           // JSON: autoRenameEnabled, aiProvider, etc.
+  ownerId           String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  owner             User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members           WorkspaceMember[]
+  resources         Resource[]
+  tags              Tag[]
+  aiAgents          AiAgent[]
+  aiActions         AiAction[]
+  aiChatThreads     AiChatThread[]
+  aiTasks           AiTask[]
+  connections       Connection[]
+  notifications     Notification[]
+  apiKeys           ApiKey[]
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String    @default("Editor") // "Admin" | "Editor" | "Viewer"
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model Resource {
+  id                  String        @id @default(cuid())
+  workspaceId         String
+  parentId            String?
+  root                String        @default("SPACE") // "SPACE" | "INBOX" | "PRIVATE"
+  kind                String        // "folder" | "notepad" | "canvas" | "link" | "document" | "image" | "video" | "audio" | "voice_note"
+  name                String
+  description         String?
+  mimeType            String
+  extension           String?
+  size                Int           @default(0)
+  url                 String?
+  originUrl           String?
+  thumbnail           String?
+  cover               String?
+  icon                String?
+  content             String?       // Rich markdown / blocks
+  data                String?       // JSON metadata (canvas nodes/edges, media duration, waveform, color palette, PDF pages)
+  isShared            Boolean       @default(false)
+  isPinned            Boolean       @default(false)
+  isLocked            Boolean       @default(false)
+  isPasswordProtected Boolean       @default(false)
+  sharePermission     String        @default("viewer")
+  shareToken          String?
+  createdById         String
+  createdAt           DateTime      @default(now())
+  modifiedAt          DateTime      @updatedAt
+  deletedAt           DateTime?
+
+  workspace           Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent              Resource?     @relation("ResourceHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children            Resource[]    @relation("ResourceHierarchy")
+  createdBy           User          @relation("ResourceCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  tags                ResourceTag[]
+  comments            Comment[]
+  chatThreads         AiChatThread[]
+
+  @@index([workspaceId, deletedAt])
+  @@index([parentId])
+  @@index([kind])
+}
+
+model Tag {
+  id          String        @id @default(cuid())
+  workspaceId String
+  name        String
+  color       String        @default("#45BAF9")
+  createdAt   DateTime      @default(now())
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  resources   ResourceTag[]
+
+  @@unique([workspaceId, name])
+}
+
+model ResourceTag {
+  id         String   @id @default(cuid())
+  resourceId String
+  tagId      String
+  createdAt  DateTime @default(now())
+
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, tagId])
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  resourceId String
+  authorId   String
+  body       String
+  timestamp  Float?   // Audio / Video timestamp in seconds
+  page       Int?     // PDF page number (1-based)
+  pinX       Float?   // Spatial pin X percentage (0..100)
+  pinY       Float?   // Spatial pin Y percentage (0..100)
+  resolved   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([resourceId])
+}
+
+model AiAgent {
+  id           String         @id @default(cuid())
+  workspaceId  String
+  name         String         @default("Rue")
+  emailAddress String
+  personality  String         @default("balanced") // "balanced" | "warm" | "direct" | "concise" | "sassy"
+  color        String         @default("#45BAF9")
+  shape        Int            @default(12)
+  cheeks       Int            @default(1)
+  instructions String?
+  isDefault    Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  workspace    Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  chatThreads  AiChatThread[]
+}
+
+model AiAction {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  prompt      String
+  icon        String    @default("Sparkles")
+  isBuiltIn   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model AiChatThread {
+  id          String          @id @default(cuid())
+  workspaceId String
+  agentId     String?
+  resourceId  String?
+  title       String          @default("New chat")
+  model       String          @default("auto")
+  provider    String          @default("copilot-sdk")
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agent       AiAgent?        @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  resource    Resource?       @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  messages    AiChatMessage[]
+}
+
+model AiChatMessage {
+  id        String       @id @default(cuid())
+  threadId  String
+  role      String       // "user" | "assistant" | "system"
+  content   String
+  citations String?      // JSON array of resource citations
+  model     String?
+  provider  String?
+  createdAt DateTime     @default(now())
+
+  thread    AiChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+}
+
+model AiTask {
+  id                   String    @id @default(cuid())
+  workspaceId          String
+  name                 String
+  instructions         String
+  frequency            String    @default("daily") // "manual" | "daily" | "weekly" | "monthly"
+  day                  String?
+  hour                 String    @default("09:00")
+  accessScope          String    @default("all")   // "all" | "selected"
+  focusResourceIds     String?   // JSON array of resource IDs
+  personality          String    @default("balanced")
+  emailEnabled         Boolean   @default(false)
+  status               String    @default("active") // "active" | "paused" | "draft"
+  lastRunAt            DateTime?
+  lastResultSummary    String?
+  lastResultResourceId String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Connection {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  provider     String
+  name         String
+  category     String    @default("app") // "app" | "importer" | "mcp"
+  description  String?
+  icon         String?
+  status       String    @default("disconnected") // "connected" | "disconnected"
+  syncedCount  Int       @default(0)
+  lastSyncedAt DateTime?
+  config       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, provider])
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  title       String
+  body        String
+  type        String    @default("system")
+  linkUrl     String?
+  isRead      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  name        String
+  keyPrefix   String
+  keyHash     String    @unique
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fabric
+      POSTGRES_PASSWORD: fabric_prod_password
+      POSTGRES_DB: fabric
+    ports:
+      - "5432:5432"
+    volumes:
+      - fabric_pgdata:/var/lib/postgresql/data
+
+  fabric-web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_PROVIDER: postgresql
+      DATABASE_URL: postgresql://fabric:fabric_prod_password@postgres:5432/fabric?schema=public
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: production-fabric-secret-change-me
+      AI_PROVIDER: copilot-sdk
+      AI_DEFAULT_MODEL: gpt-4.1
+
+volumes:
+  fabric_pgdata:
